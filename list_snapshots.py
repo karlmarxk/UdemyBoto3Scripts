@@ -1,15 +1,10 @@
-#!/bin/python
-import boto3
-from botocore.exceptions import ClientError
+#!/usr/bin/env python3
+"""Compatibility wrapper for get_all_snapshots."""
 
-session=boto3.session.Session(profile_name="dev_root")
-sts_cli=session.client("sts")
-print sts_cli.get_caller_identity()
+from __future__ import annotations
 
-'''
-ec2_re=session.resource(service_name="ec2",region_name="us-east-1")
-cnt=1
-for each_snap in ec2_re.snapshots.filter(OwnerIds=["943637252859"]):
-    print cnt,each_snap
-    cnt+=1
-'''
+from get_all_snapshots import main
+
+
+if __name__ == "__main__":
+    main()

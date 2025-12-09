@@ -1,33 +1,79 @@
-#!/bin/python
-import boto3
+#!/usr/bin/env python3
+"""Export IAM users to stdout or CSV."""
 
-session=boto3.session.Session(profile_name="dev_root")
-'''
-iam_re=session.resource("iam")
-cnt=1
-for each_user in iam_re.users.all():
-   print cnt,each_user.user_name
-   cnt=cnt+1
+from __future__ import annotations
 
-cnt=1
-iam_cli=session.client("iam")
-for each_user in iam_cli.list_users()['Users']:
-    print cnt, each_user['UserName']
-    cnt=cnt+1
-'''
+import argparse
+import csv
+import logging
+from pathlib import Path
+from typing import List
 
-'''
-cnt=1
-iam_cli=session.client("iam")
-paginator = iam_cli.get_paginator('list_users')
-for each_page in  paginator.paginate():
-    for each_user in     each_page['Users']:
-       print cnt,each_user['UserName']
-       cnt=cnt+1
-'''
-iam_cli=session.client("ec2")
-paginatro=iam_cli.get_paginator('describe_instances')
-for each_page in paginatro.paginate():
-     print each_page
+from botocore.exceptions import BotoCoreError, ClientError
 
+from aws_utils import add_common_arguments, configure_logging, get_client
+
+LOGGER = logging.getLogger(__name__)
+
+
+def fetch_users(*, profile: str | None, region: str | None) -> List[dict]:
+    iam_client = get_client(
+        "iam", profile=profile, region=region or "us-east-1"
+    )
+    paginator = iam_client.get_paginator("list_users")
+    users: List[dict] = []
+    for page in paginator.paginate():
+        users.extend(page.get("Users", []))
+    return users
+
+
+def write_csv(path: Path, users: List[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["UserName", "UserId", "Arn", "CreateDate", "Path"])
+        for user in users:
+            writer.writerow(
+                [
+                    user.get("UserName", ""),
+                    user.get("UserId", ""),
+                    user.get("Arn", ""),
+                    user.get("CreateDate", ""),
+                    user.get("Path", ""),
+                ]
+            )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="List IAM users and optionally export to CSV."
+    )
+    add_common_arguments(parser)
+    parser.add_argument(
+        "--csv-out",
+        type=Path,
+        help="Write user data to this CSV file (in addition to stdout).",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    configure_logging(args.verbose)
+    try:
+        users = fetch_users(profile=args.profile, region=args.region)
+        for user in users:
+            print(user.get("UserName", ""))
+
+        if args.csv_out:
+            write_csv(args.csv_out, users)
+            print(f"Wrote {len(users)} users to {args.csv_out}")
+    except (BotoCoreError, ClientError) as exc:
+        LOGGER.error("Failed to list IAM users: %s", exc)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()
 

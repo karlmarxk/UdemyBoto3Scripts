@@ -1,17 +1,45 @@
-import boto3
-iam_re=boto3.session.Session(profile_name="dev_root").resource('iam')
-iam_cli=boto3.session.Session(profile_name="dev_root").client('iam')
-cnt=1
-'''
-for each in iam_re.users.all():
-  print cnt,each.user_name
-  cnt=cnt+1
-for each in iam_cli.list_users()['Users']:
-   print each
+#!/usr/bin/env python3
+"""List IAM user names with optional path prefix filtering."""
 
-print len(iam_cli.list_users()['Users'])
-'''
+from __future__ import annotations
 
-paginator = iam_cli.get_paginator('list_users')
-for each_page in paginator.paginate(PathPrefix="/"):
-    print len( each_page['Users'])
+import argparse
+import logging
+
+from botocore.exceptions import BotoCoreError, ClientError
+
+from aws_utils import add_common_arguments, configure_logging, get_client
+
+LOGGER = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="List IAM user names.")
+    add_common_arguments(parser)
+    parser.add_argument(
+        "--path-prefix",
+        default="/",
+        help="Restrict listing to users under this path prefix (default '/').",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    configure_logging(args.verbose)
+    try:
+        iam_client = get_client(
+            "iam", profile=args.profile, region=args.region or "us-east-1"
+        )
+        paginator = iam_client.get_paginator("list_users")
+        for page in paginator.paginate(PathPrefix=args.path_prefix):
+            for user in page.get("Users", []):
+                print(user.get("UserName", ""))
+    except (BotoCoreError, ClientError) as exc:
+        LOGGER.error("Failed to list IAM users: %s", exc)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()
